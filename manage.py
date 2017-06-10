@@ -18,6 +18,7 @@ Use `--verbose` to print commands as they are run.
 from __future__ import print_function
 import argparse
 import datetime
+import os
 import subprocess
 import time
 
@@ -27,6 +28,13 @@ class DryrunPopen():
         self.returncode = 0
     def poll(self): pass
     def wait(self): pass
+
+RANDOM_SOURCE_RANDOM = "/dev/random"
+RANDOM_SOURCE_URANDOM = "/dev/urandom"
+ALLOWED_RANDOM_SOURCES = [
+    RANDOM_SOURCE_RANDOM,
+    RANDOM_SOURCE_URANDOM,
+]
 
 OUTPUT_INFO = "INFO"
 OUTPUT_WRITE = "WRITE"
@@ -54,6 +62,15 @@ ALLOWED_RAID_LEVELS = [
     RAID_LEVEL_6,
 ]
 
+RAID_SYNC_ACTION_IDLE = "idle"
+RAID_SYNC_ACTION_RESYNC = "resync"
+
+DEFAULT_MDADM_CONF_FILE = "/etc/mdadm/mdadm.conf"
+DEFAULT_MDADM_CONF_CREATE = "CREATE owner=root group=disk mode=0660 auto=yes"
+DEFAULT_MDADM_CONF_DEVICE = "partitions"
+DEFAULT_MDADM_CONF_HOMEHOST = "<system>"
+DEFAULT_MDADM_CONF_MAILADDR = "root"
+
 CRYPT_KEY_SIZE_256 = "256"
 CRYPT_KEY_SIZE_512 = "512"
 ALLOWED_CRYPT_KEY_SIZES = [
@@ -77,18 +94,6 @@ ALLOWED_FS_TYPES = [
     FS_TYPE_EXT2,
     FS_TYPE_EXT3,
     FS_TYPE_EXT4,
-]
-
-SCHEDULER_NONE = "none"
-SCHEDULER_NOOP = "noop"
-SCHEDULER_CFQ = "cfq"
-SCHEDULER_DEADLINE = "deadline"
-SCHEDULER_FALLBACK = "noop deadline [cfq]"
-ALLOWED_SCHEDULERS = [
-    SCHEDULER_NONE,
-    SCHEDULER_NOOP,
-    SCHEDULER_CFQ,
-    SCHEDULER_DEADLINE,
 ]
 
 DEFAULT_BLOCK_SIZE = 4
@@ -163,11 +168,6 @@ def md_label_arg(parser):
                         required=True,
                         help="Label for MD device")
 
-def md_name_arg(parser):
-    parser.add_argument("--md_name",
-                        required=True,
-                        help="Name for MD device")
-
 def crypt_name_arg(parser):
     parser.add_argument("--crypt_name",
                         required=True,
@@ -184,24 +184,29 @@ def create_args(parser):
     raid_level_arg(parser)
     raid_chunk_size_arg(parser)
     md_label_arg(parser)
-    md_name_arg(parser)
     crypt_name_arg(parser)
     devices_arg(parser)
 
-    parser.add_argument("--do_not_randomize",
-                        dest="randomize",
-                        action="store_false")
-    parser.set_defaults(randomize=True)
+    parser.add_argument("--randomize",
+                        choices=ALLOWED_RANDOM_SOURCES,
+                        default=None,
+                        help="Random source to initialize drives")
 
+    parser.add_argument("--mdadm_conf_file",
+                        default=DEFAULT_MDADM_CONF_FILE,
+                        help="MDADM config file location")
+    parser.add_argument("--mdadm_conf_create",
+                        default=DEFAULT_MDADM_CONF_CREATE,
+                        help="Create arguments for MDADM config")
     parser.add_argument("--mdadm_conf_device",
-                        default="partitions",
+                        default=DEFAULT_MDADM_CONF_DEVICE,
                         help="Device for MDADM config")
     parser.add_argument("--mdadm_conf_homehost",
-                        default="<system>",
+                        default=DEFAULT_MDADM_CONF_HOMEHOST,
                         help="Host for MDADM config")
     parser.add_argument("--mdadm_conf_mailaddr",
-                        required=True,
-                        help="Mail address for MDADM config")
+                        default=DEFAULT_MDADM_CONF_MAILADDR,
+                        help="Mailaddr for MDADM config")
 
     parser.add_argument("--crypt_key_size",
                         choices=ALLOWED_CRYPT_KEY_SIZES,
@@ -225,7 +230,6 @@ def tune_args(parser):
     block_size_arg(parser)
     raid_level_arg(parser)
     raid_chunk_size_arg(parser)
-    md_name_arg(parser)
     md_label_arg(parser)
     crypt_name_arg(parser)
     devices_arg(parser)
@@ -235,11 +239,6 @@ def tune_args(parser):
                         type=check_positive_int,
                         default=DEFAULT_DRIVE_READAHEAD,
                         help="Readahead value for each drive in 512B sectors")
-
-    parser.add_argument("--drive_scheduler",
-                        choices=ALLOWED_SCHEDULERS,
-                        default=SCHEDULER_FALLBACK,
-                        help="I/O request scheduler algorithm for each drive")
 
     parser.add_argument("--drive_nr_requests",
                         type=check_positive_int,
@@ -260,11 +259,6 @@ def tune_args(parser):
                         required=False,
                         help="Readahead value for RAID device in 512B sectors")
     add_post_parse_default("raid_readahead", optimal_raid_readahead)
-
-    parser.add_argument("--raid_scheduler",
-                        choices=ALLOWED_SCHEDULERS,
-                        default=SCHEDULER_NONE,
-                        help="I/O request scheduler algorithm for RAID device")
 
     parser.add_argument("--raid_stripe_cache",
                         type=check_positive_int,
@@ -300,11 +294,11 @@ def tune_args(parser):
     add_post_parse_default("fs_stripe_width", optimal_fs_stripe_width)
 
 def start_args(parser):
-    md_name_arg(parser)
+    md_label_arg(parser)
     crypt_name_arg(parser)
 
 def stop_args(parser):
-    md_name_arg(parser)
+    md_label_arg(parser)
     crypt_name_arg(parser)
 
 def parse_args():
@@ -374,10 +368,10 @@ def write(args, filepath, content):
             print("  %s" % line)
 
     if not args.dryrun:
-        with open(filepath) as filehandle:
+        with open(filepath, "w") as filehandle:
             print(content, file=filehandle)
 
-def run(args, command):
+def run(args, command, **kwargs):
     if args.verbose:
         output(args, OUTPUT_RUN, 2, " ".join(map(str, command)))
 
@@ -393,11 +387,11 @@ def spawn(args, command):
     else:
         return subprocess.Popen(command)
 
+def device_partitions(args):
+    return ["%s1" % device for device in args.devices]
+
 def md_device_label(args):
     return "/dev/%s" % args.md_label
-
-def md_device_name(args):
-    return "/dev/md/%s" % args.md_name
 
 def crypt_device(args):
     return "/dev/mapper/%s" % args.crypt_name
@@ -426,8 +420,8 @@ def optimal_drive_ncq_depth(args):
     for device in args.devices:
         output = subprocess.check_output(["hdparm", "-Q", device])
         depth_line = filter(lambda l: "queue_depth" in l, output.split("\n"))
-        if depth_line:
-            depths.append(int(depth_line.split()[-1]))
+        if len(depth_line):
+            depths.append(int(depth_line[0].split()[-1]))
     return min(depths)
 
 def optimal_raid_chunk_size_kb(args):
@@ -477,7 +471,6 @@ def create(args):
     # Create a RAID volume on the prepared devices.
     create_raid(args)
     configure_raid(args)
-    start_raid(args)
     # Add an encrypted volume on top of the RAID volume.
     create_crypt(args)
     start_crypt(args)
@@ -505,15 +498,21 @@ def stop(args):
     stop_raid(args)
 
 def randomize_drives(args):
-    if not args.randomize:
+    if args.randomize is None:
         return
 
     info(args, "Randomizing devices in parallel")
 
-    # Use a buffer size of 64M to speed things up.
+    get_sectors = lambda d: subprocess.check_output(["blockdev", "--getsz", d])
     processes = [
-        spawn(args, ["dd", "bs=64M", "if=/dev/urandom", "of=%s" % d])
-        for d in args.devices
+        spawn(args, [
+            "dd",
+            "if=%s" % args.randomize,
+            "of=%s" % d,
+            "bs=512", # Sector size
+            "count=%d" % int(count),
+        ])
+        for d, count in [(d, get_sectors(d)) for d in args.devices]
     ]
 
     while len(processes) > 0:
@@ -523,63 +522,110 @@ def randomize_drives(args):
         processes = [p for p in processes if p.returncode is None]
 
 def partition_drives(args):
+    def wait_for_partitions(present):
+        if args.dryrun:
+            return
+        for partition in device_partitions(args):
+            part_base = os.path.basename(partition)
+            part_dir = os.path.dirname(partition)
+            while (part_base in os.listdir(part_dir)) == present:
+                time.sleep(0.1)
+
     info(args, "Partitioning devices")
 
+    parted_command_prefix = ["parted", "--script", "--align", "optimal"]
+
     for device in args.devices:
-        command = ["parted", "--align", "optimal", device]
-        run(args, command + ["mklabel", "gpt"])
-        run(args, command + ["mkpart", "primary", "0%", "100%"])
+        run(args, parted_command_prefix + [device, "mklabel", "gpt"])
+    # Wait for partitions to be removed.
+    wait_for_partitions(True)
+
+    for device in args.devices:
+        run(args,
+            parted_command_prefix + [device, "mkpart", "primary", "0%", "100%"])
+    # Wait for new partitions to be visisble.
+    wait_for_partitions(False)
 
 def create_raid(args):
     info(args, "Creating new RAID volume")
 
+    run(args, ["mdadm", "--zero-superblock"] + device_partitions(args))
+
     command = [
         "mdadm",
-        "--create", md_device_label(args),
-        "--name", md_device_name(args),
-        "--level", args.raid_level,
+        "--create",
+        "--verbose",
+        md_device_label(args),
+        "--level=%s" % args.raid_level,
     ]
     if args.raid_chunk_size:
-        command += ["--chunk", args.raid_chunk_size]
-    command += ["--raid-devices", len(args.devices)]
-    command += args.devices
+        command += ["--chunk=%d" % args.raid_chunk_size]
+    command += ["--raid-devices=%d" % len(args.devices)]
+    command += device_partitions(args)
 
     run(args, command)
 
-    run(args, [
-        "mdadm",
-        "--grow",
-        "--bitmap=internal",
-        md_device_label(args),
-    ])
+    md_sys_directory = os.path.join("/sys/class/block", args.md_label, "md")
+
+    sync_action_file_path = os.path.join(md_sys_directory, "sync_action")
+    def _sync_action():
+        with open(sync_action_file_path, "r") as sync_action_file:
+            return sync_action_file.read().strip()
+
+    sync_completed_file_path = os.path.join(md_sys_directory, "sync_completed")
+    def _sync_completed():
+        with open(sync_completed_file_path, "r") as completed_file:
+            completed = completed_file.read().split("/")
+            current = int(completed[0].strip())
+            total = int(completed[1].strip())
+            return int((current * 100 / total) / 10) * 10
+
+    last_sync_completed = None
+    def _print_sync_status():
+        current_sync_completed = _sync_completed()
+        if last_sync_completed is None:
+            info(args, "RAID resync in progress")
+        elif last_sync_completed < current_sync_completed:
+            info(args, "RAID resync %d%% complete" % current_sync_progress)
+        last_sync_completed = current_sync_completed
+
+    while True:
+        sync_action = _sync_action(sync_action_file_path)
+        if sync_action == RAID_SYNC_ACTION_RESYNC:
+            _print_sync_status()
+        elif sync_action == RAID_SYNC_ACTION_IDLE:
+            info(args, "RAID resync complete")
+            break
+        else:
+            info(args, "Unknown sync action '%s'. Exiting." % sync_action)
+            quit(1)
+        time.sleep(5)
 
 def configure_raid(args):
     info(args, "Configuring MDADM")
 
-    mdadm_array_details = subprocess.check_output(["mdadm", "--detail", "--scan"])
-
-    mdadm_conf_file_path = "/etc/mdadm.conf"
     mdadm_conf_file_content = "\n".join([
         "DEVICE %s" % args.mdadm_conf_device,
+        "CREATE %s" % args.mdadm_conf_create,
         "HOMEHOST %s" % args.mdadm_conf_homehost,
         "MAILADDR %s" % args.mdadm_conf_mailaddr,
-        mdadm_array_details,
+        subprocess.check_output(["mdadm", "--detail", "--scan"]),
     ])
 
-    write(args, mdadm_conf_file_path, mdadm_conf_file_content)
+    write(args, args.mdadm_conf_file, mdadm_conf_file_content)
 
 def create_crypt(args):
     # The cipher is not customizable because none of the alternatives are
     # anywhere near as secure.
     run(args, [
         "cryptsetup",
-        "--cipher", "aes-xts-plain64",
-        "--key-size", args.crypt_key_size,
-        "--hash", args.crypt_hash_algorithm,
-        "--iter-time", args.crypt_iter_time,
+        "--cipher=aes-xts-plain64",
+        "--key-size=%s" % args.crypt_key_size,
+        "--hash=%s" % args.crypt_hash_algorithm,
+        "--iter-time=%d" % args.crypt_iter_time,
         "--use-random",
         "luksFormat",
-        md_device_name(args),
+        md_device_label(args),
     ])
 
 def create_fs(args):
@@ -591,6 +637,7 @@ def create_fs(args):
     ])
 
 def tune_drives(args):
+    # Align to RAID chunk size instead of default value of 1280.
     max_sectors_kb = args.raid_chunk_size
     for device in args.devices:
         drive = device.lstrip("/dev/")
@@ -600,7 +647,7 @@ def tune_drives(args):
         run(args, [
             "blockdev",
             "--setra",
-            args.drive_readahead,
+            str(args.drive_readahead),
             device,
         ])
         rc_commands.append("blockdev --setra '%d' '%s'" % \
@@ -612,13 +659,6 @@ def tune_drives(args):
               str(max_sectors_kb))
         rc_commands.append("echo '%d' > '%s'" % \
                            (max_sectors_kb, max_sectors_kb_file))
-
-        scheduler_file = "/sys/block/%s/queue/scheduler" % drive
-        write(args,
-              scheduler_file,
-              args.drive_scheduler)
-        rc_commands.append("echo '%s' > '%s'" % \
-                           (args.drive_scheduler, scheduler_file))
 
         nr_requests_file = "/sys/block/%s/queue/nr_requests" % drive
         write(args,
@@ -640,7 +680,7 @@ def tune_raid(args):
     run(args, [
         "blockdev",
         "--setra",
-        args.raid_readahead,
+        str(args.raid_readahead),
         md_device_label(args),
     ])
     rc_commands.append("blockdev --setra '%d' '%s'" % \
@@ -696,14 +736,14 @@ def start_raid(args):
     run(args, [
         "mdadm",
         "--assemble",
-        md_device_name(args),
+        md_device_label(args),
     ])
 
 def start_crypt(args):
     run(args, [
         "cryptsetup",
         "luksOpen",
-        md_device_name(args),
+        md_device_label(args),
         args.crypt_name
     ])
 
@@ -711,7 +751,7 @@ def stop_raid(args):
     run(args, [
         "mdadm",
         "--stop",
-        md_device_name(args),
+        md_device_label(args),
     ])
 
 def stop_crypt(args):

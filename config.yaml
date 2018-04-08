@@ -1,0 +1,100 @@
+disk:
+  defaults:
+    randomize_source: /dev/urandom
+    readahead: 256
+    nr_requests: 128
+  devices:
+    - path: /dev/sda
+      raid_volume: array
+      fs_volume: storage
+    - path: /dev/sdb
+      raid_volume: array
+      fs_volume: storage
+    - path: /dev/sdc
+      raid_volume: array
+      fs_volume: storage
+    - path: /dev/sdd
+      raid_volume: array
+      fs_volume: storage
+    - path: /dev/sde
+      raid_volume: array
+      fs_volume: storage
+    - path: /dev/sdf
+      raid_volume: array
+      fs_volume: storage
+    - path: /dev/sdg
+      raid_volume: array
+      fs_volume: storage
+    - path: /dev/sdh
+      raid_volume: array
+      fs_volume: storage
+
+raid:
+  mdadm_config:
+    device: partitions
+    create: owner=root group=disk mode=0660 auto=yes
+    homehost: <system>
+    mailaddr: root
+  speed_limit_min: 1000
+  speed_limit_max: 200000
+  volumes:
+    - name: array
+      label: md0
+      raid_level: 6
+      devices:
+        - path: /dev/sda1
+        - path: /dev/sdb1
+        - path: /dev/sdc1
+        - path: /dev/sdd1
+        - path: /dev/sde1
+        - path: /dev/sdf1
+        - path: /dev/sdg1
+        - path: /dev/sdh1
+
+crypt:
+  defaults:
+    cipher: aes-xts-plain64
+    key_size: 512
+    hash_algorithm: sha512
+    iter_time: 5000
+  volumes:
+    - encrypted_path: /dev/md/array
+      decrypted_name: vault
+
+fs:
+  defaults:
+    type: ext4
+  volumes:
+    - name: storage
+      device_path: /dev/mapper/vault
+      mount_location: /mnt/storage
+
+bind:
+  read_only:
+    - source: /mnt/storage/media-server/library
+      target: /exports/library_ro
+  read_write:
+    - source: /mnt/storage/media-server/library
+      target: /exports/library_rw
+
+export:
+  host_groups:
+    - name: internal_network
+      hosts:
+        - 192.168.0.0/16
+        - 172.16.0.0/12
+        - 10.0.0.0/8
+  options:
+    - name: read_only
+      value: ro,async,crossmnt,no_subtree_check,fsid=0,all_squash
+    - name: read_write
+      value: rw,sync,crossmnt,no_subtree_check,fsid=0,all_squash
+  volumes:
+    - path: /exports/library_ro
+      host_group_options:
+        - host_group: internal_network
+          option: read_only
+    - path: /exports/library_rw
+      host_group_options:
+        - host_group: internal_network
+          option: read_write

@@ -1,33 +1,20 @@
 disk:
-  defaults:
-    randomize_source: /dev/urandom
-    readahead: 256
-    nr_requests: 128
-  devices:
-    - path: /dev/sda
+  device_groups:
+    - defaults:
+        randomize_source: /dev/urandom
+        readahead_sectors: 256
+        nr_requests: 128
       raid_volume: array
       fs_volume: storage
-    - path: /dev/sdb
-      raid_volume: array
-      fs_volume: storage
-    - path: /dev/sdc
-      raid_volume: array
-      fs_volume: storage
-    - path: /dev/sdd
-      raid_volume: array
-      fs_volume: storage
-    - path: /dev/sde
-      raid_volume: array
-      fs_volume: storage
-    - path: /dev/sdf
-      raid_volume: array
-      fs_volume: storage
-    - path: /dev/sdg
-      raid_volume: array
-      fs_volume: storage
-    - path: /dev/sdh
-      raid_volume: array
-      fs_volume: storage
+      devices:
+        - path: /dev/sda
+        - path: /dev/sdb
+        - path: /dev/sdc
+        - path: /dev/sdd
+        - path: /dev/sde
+        - path: /dev/sdf
+        - path: /dev/sdg
+        - path: /dev/sdh
 
 raid:
   mdadm_config:
@@ -62,10 +49,9 @@ crypt:
       decrypted_name: vault
 
 fs:
-  defaults:
-    type: ext4
   volumes:
     - name: storage
+      fs_type: ext4
       device_path: /dev/mapper/vault
       mount_location: /mnt/storage
 

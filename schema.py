@@ -5,75 +5,99 @@ from marshmallow import Schema, fields, validate
 import utility
 
 
+class UnknownRaidVolume(KeyError):
+    pass
+
+
+class UnknownCryptVolume(KeyError):
+    pass
+
+
+class UnknownFsVolume(KeyError):
+    pass
+
+
 class DiskSchema(Schema):
-    # TODO: organize disks into groups
-    class DeviceCommon(object):
-        # Device used to iniitialize disk devices with random data.
-        randomize_source = fields.Str(
-            allow_none=True,
-            validate=validate.OneOf([
-                # Cryprographically secure, but very slow.
-                "/dev/random",
-                # Sufficient to obfuscate data occupancy, but slow.
-                "/dev/urandom",
-            ]),
-        )
+    class DeviceGroupSchema(Schema):
+        class DeviceCommon(object):
+            # Device used to iniitialize disk devices with random data.
+            randomize_source = fields.Str(
+                allow_none=True,
+                validate=validate.OneOf([
+                    # Cryprographically secure, but very slow.
+                    "/dev/random",
+                    # Sufficient to obfuscate data occupancy, but slow.
+                    "/dev/urandom",
+                ]),
+            )
 
-        # Readahead parameter in 512-byte sectors.
-        readahead = fields.Int()
+            # Readahead parameter in 512-byte sectors.
+            readahead_sectors = fields.Int()
 
-        # Number of active I/O requests to pass to device before buffering.
-        nr_requests = fields.Int()
+            # Number of active I/O requests to pass to device before buffering.
+            nr_requests = fields.Int()
 
-    class DeviceDefaultsSchema(Schema, DeviceCommon):
-        pass
+        class DeviceDefaultsSchema(Schema, DeviceCommon):
+            pass
 
-    class DeviceSchema(Schema, DeviceCommon):
-        # Path to block device.
-        # This is usually a disk: /dev/sdX
-        path = fields.Str(required=True)
+        class DeviceSchema(Schema, DeviceCommon):
+            # Path to block device.
+            # This is usually a disk: /dev/sdX
+            path = fields.Str(required=True)
 
-        # Name of the RAID volume this device belongs to.
+        # Defaults for all disk devices in this group.
+        # These values will be overridden by values defined in a device.
+        defaults = fields.Nested(DeviceDefaultsSchema)
+
+        # Name of the RAID volume this device group belongs to.
         # This is optional.
         raid_volume = fields.Str()
 
-        # Name of the FS volume this device belongs to.
+        # Name of the FS volume this device group belongs to.
         # This is optional.
         fs_volume = fields.Str()
 
-    # Defaults for all disk devices.
-    # These values will be overridden by values defined in a device.
-    defaults = fields.Nested(DeviceDefaultsSchema)
+        # List of disk devices that compose this group.
+        devices = fields.Nested(DeviceSchema, many=True, required=True)
 
-    # List of disk devices to manage on the system.
-    devices = fields.Nested(DeviceSchema, many=True, required=True)
+    # List of disk device groups to manage on the system.
+    device_groups = fields.Nested(DeviceGroupSchema, many=True, required=True)
 
 
 class Disk:
-    class Device:
-        def __init__(self, **kwargs):
-            self.__dict__.update(**kwargs)
+    class DeviceGroup:
+        class Device:
+            def __init__(self, **kwargs):
+                self.__dict__.update(**kwargs)
 
-        @property
-        def basename(self):
-            return os.path.basename(self.path)
+            @property
+            def basename(self):
+                return os.path.basename(self.path)
 
-        @property
-        def max_sectors_kb_file(self):
-            return "/sys/block/{}/queue/max_sectors_kb".format(self.basename)
+            @property
+            def max_sectors_kb_file(self):
+                return "/sys/block/{}/queue/max_sectors_kb".format(self.basename)
 
-        @property
-        def nr_requests_file(self):
-            return "/sys/block/{}/queue/nr_requests".format(self.basename)
+            @property
+            def nr_requests_file(self):
+                return "/sys/block/{}/queue/nr_requests".format(self.basename)
 
-        @property
-        def queue_depth_file(self):
-            return "/sys/block/{}/device/queue_depth".format(self.basename)
+            @property
+            def queue_depth_file(self):
+                return "/sys/block/{}/device/queue_depth".format(self.basename)
+
+        def __init__(self, schema):
+            self.raid_volume = schema["raid_volume"]
+            self.fs_volume = schema["fs_volume"]
+            self.devices = [
+                self.Device(**utility.merge(schema["defaults"], d))
+                for d in schema["devices"]
+            ]
 
     def __init__(self, schema):
-        self.devices = [
-            self.Device(**utility.merge(schema["defaults"], d))
-            for d in schema["devices"]
+        self.device_groups = [
+            self.DeviceGroup(d)
+            for d in schema["device_groups"]
         ]
 
 
@@ -228,31 +252,26 @@ class Crypt:
 
 
 class FsSchema(Schema):
-    class VolumeCommon(object):
-        # Type of filesystem to use on a volume.
-        fs_type = fields.Str(validate=validate.OneOf([
-            "ext2",
-            "ext3",
-            "ext4",
-        ]))
-
-    class VolumeDefaultsSchema(Schema, VolumeCommon):
-        pass
-
-    class VolumeSchema(Schema, VolumeCommon):
+    class VolumeSchema(Schema):
         # Name of FS volume.
         # This is referenced by disk devices.
         name = fields.Str(required=True)
+
+        # Type of filesystem to use on volume.
+        fs_type = fields.Str(
+            required=True,
+            validate=validate.OneOf([
+                "ext2",
+                "ext3",
+                "ext4",
+            ]),
+        )
 
         # Path to block device.
         device_path = fields.Str(required=True)
 
         # Location to mount filesystem.
         mount_location = fields.Str(required=True)
-
-    # Defaults for all FS volumes.
-    # These values will be overridden by values defined in a volume.
-    defaults = fields.Nested(VolumeDefaultsSchema)
 
     # List of FS volumes to manage on the system.
     volumes = fields.Nested(VolumeSchema, many=True)
@@ -265,7 +284,7 @@ class Fs:
 
     def __init__(self, schema):
         self.volumes = [
-            self.Volume(**utility.merge(schema["defaults"], v))
+            self.Volume(**v)
             for v in schema["volumes"]
         ]
 
@@ -405,30 +424,44 @@ class Configuration:
         for v in self.raid.volumes:
             if v.name == raid_volume_name:
                 return v
-        raise KeyError()
+        raise UnknownRaidVolume(raid_volume_name)
 
     def find_crypt_volume(self, crypt_volume_name):
         for v in self.crypt.volumes:
             if v.decrypted_name == crypt_volume_name:
                 return v
-        raise KeyError()
+        raise UnknownCryptVolume(crypt_volume_name)
 
     def find_fs_volume(self, fs_volume_name):
         for v in self.fs.volumes:
             if v.name == fs_volume_name:
                 return v
-        raise KeyError()
+        raise UnknownFsVolume(fs_volume_name)
+
+    def find_disk_device_group_with_raid_volume(self, raid_volume_name):
+        for dg in self.disk.device_groups:
+            if dg.raid_volume == raid_volume_name:
+                return dg
+        raise UnknownRaidVolume(raid_volume_name)
+
+    def find_disk_device_group_with_fs_volume(self, fs_volume_name):
+        for dg in self.disk.device_groups:
+            if dg.fs_volume == fs_volume_name:
+                return dg
+        raise UnknownFsVolume(fs_volume_name)
 
     def find_disk_devices_with_raid_volume(self, raid_volume_name):
-        return [
-            d
-            for d in self.disk.devices
-            if d.raid_volume == raid_volume_name
+        device_groups = [
+            dg
+            for dg in self.disk.device_groups
+            if dg.raid_volume == raid_volume_name
         ]
+        return sum((dg.devices for dg in device_groups), [])
 
     def find_disk_devices_with_fs_volume(self, fs_volume_name):
-        return [
-            d
-            for d in self.disk.devices
-            if d.fs_volume == fs_volume_name
+        device_groups = [
+            dg
+            for dg in self.disk.device_groups
+            if dg.fs_volume == fs_volume_name
         ]
+        return sum((dg.devices for dg in device_groups), [])

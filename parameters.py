@@ -7,6 +7,10 @@ BYTES_PER_PAGE = 4096
 SECTORS_PER_PAGE = BYTES_PER_PAGE / BYTES_PER_SECTOR
 
 
+class InvalidRaidLevel(ValueError):
+    pass
+
+
 def _num_data_disks(disk_devices, raid_level):
     """
     Determine how many of the provided disk devices contribute to total data
@@ -21,7 +25,7 @@ def _num_data_disks(disk_devices, raid_level):
     elif raid_level == 6:
         return len(disk_devices) - 2
     else:
-        raise ValueError
+        raise InvalidRaidLevel(raid_level)
 
 
 def _gcd(a, b):
@@ -67,25 +71,26 @@ def raid_chunk_size_kb(raid_level):
     elif raid_level == 6:
         return 64
     else:
-        raise ValueError()
+        raise InvalidRaidLevel(raid_level)
 
 
-def raid_readahead(disk_devices):
+def raid_readahead_sectors(disk_devices):
     """
     This formula was found in a RAID tuning forum post:
     https://ubuntuforums.org/showthread.php?t=1494846
     """
-    return int(sum(d.readahead for d in disk_devices))
+    return int(sum(d.readahead_sectors for d in disk_devices))
 
 
-def raid_stripe_cache(disk_devices):
+def raid_stripe_cache_pages(disk_devices):
     """
     This formula was found in a RAID tuning forum post:
     https://ubuntuforums.org/showthread.php?t=1494846
     """
-    sum_disk_readahead = sum(d.readahead for d in disk_devices)
-    average_disk_readahead = sum_disk_readahead / len(disk_devices)
-    return int(average_disk_readahead / SECTORS_PER_PAGE)
+    sum_disk_readahead_sectors = sum(d.readahead_sectors for d in disk_devices)
+    average_disk_readahead_sectors = \
+        sum_disk_readahead_sectors / len(disk_devices)
+    return int(average_disk_readahead_sectors / SECTORS_PER_PAGE)
 
 
 def fs_block_size_kb(disk_devices):

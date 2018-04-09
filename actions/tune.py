@@ -43,7 +43,7 @@ class Tune(actions.action.Action):
         )
         self.configuration = configuration.make(self.args.config_file)
 
-    def _tune_disk_device(self, device):
+    def _tune_disk_device(self, device, max_sectors_kb, ncq_depth):
         rc_commands = []
 
         rc_commands.append(self.executor.info(
@@ -53,13 +53,10 @@ class Tune(actions.action.Action):
         rc_commands.append(self.executor.run([
             "blockdev",
             "--setra",
-            str(device.readahead),
+            str(device.readahead_sectors),
             device.path,
         ]))
 
-        # Align to RAID chunk size instead of default value of 1280.
-        raid_volume = self.configuration.find_raid_volume(device.raid_volume)
-        max_sectors_kb = parameters.raid_chunk_size_kb(raid_volume.raid_level)
         rc_commands.append(self.executor.write(
             device.max_sectors_kb_file,
             str(max_sectors_kb),
@@ -70,10 +67,6 @@ class Tune(actions.action.Action):
             str(device.nr_requests),
         ))
 
-        disk_devices = self.configuration.find_disk_devices_with_raid_volume(
-            device.raid_volume,
-        )
-        ncq_depth = parameters.disk_ncq_depth(disk_devices)
         rc_commands.append(self.executor.write(
             device.queue_depth_file,
             str(ncq_depth),
@@ -86,8 +79,26 @@ class Tune(actions.action.Action):
 
         rc_commands.append(self.executor.info("Tuning disk parameters"))
 
-        for device in self.configuration.disk.devices:
-            rc_commands += self._tune_disk_device(device)
+        for device_group in self.configuration.disk.device_groups:
+            raid_volume = self.configuration.find_raid_volume(
+                device_group.raid_volume,
+            )
+            max_sectors_kb = parameters.raid_chunk_size_kb(
+                raid_volume.raid_level,
+            )
+
+            disk_devices = \
+                self.configuration.find_disk_devices_with_raid_volume(
+                    device_group.raid_volume,
+                )
+            ncq_depth = parameters.disk_ncq_depth(disk_devices)
+
+            for device in device_group.devices:
+                rc_commands += self._tune_disk_device(
+                    device,
+                    max_sectors_kb,
+                    ncq_depth,
+                )
 
         return rc_commands
 
@@ -101,18 +112,21 @@ class Tune(actions.action.Action):
         disk_devices = self.configuration.find_disk_devices_with_raid_volume(
             volume.name,
         )
-        raid_readahead = parameters.raid_readahead(disk_devices)
+
+        raid_readahead_sectors = parameters.raid_readahead_sectors(disk_devices)
         rc_commands.append(self.executor.run([
             "blockdev",
             "--setra",
-            str(raid_readahead),
+            str(raid_readahead_sectors),
             volume.label_path,
         ]))
 
-        raid_stripe_cache = parameters.raid_stripe_cache(disk_devices)
+        raid_stripe_cache_pages = parameters.raid_stripe_cache_pages(
+            disk_devices,
+        )
         rc_commands.append(self.executor.write(
             volume.stripe_cache_size_file,
-            str(raid_stripe_cache),
+            str(raid_stripe_cache_pages),
         ))
 
         return rc_commands
@@ -145,22 +159,24 @@ class Tune(actions.action.Action):
             volume.mount_location,
         )
 
-        disk_devices = self.configuration.find_disk_devices_with_fs_volume(
-            volume.name,
+        disk_device_group = \
+            self.configuration.find_disk_device_group_with_fs_volume(
+                volume.name,
+            )
+        raid_volume = self.configuration.find_raid_volume(
+            disk_device_group.raid_volume,
         )
-        assert len(disk_devices) > 0
-        raid_volume_names = {d.raid_volume for d in disk_devices}
-        assert len(raid_volume_names) == 1
-        raid_volume_name = next(iter(raid_volume_names))
-        raid_volume = self.configuration.find_raid_volume(raid_volume_name)
 
         self.executor.run([
             "tune2fs",
             "-E",
             "stride={},stripe-width={}".format(
-                parameters.fs_stride(disk_devices, raid_volume.raid_level),
+                parameters.fs_stride(
+                    disk_device_group.devices,
+                    raid_volume.raid_level,
+                ),
                 parameters.fs_stripe_width(
-                    disk_devices,
+                    disk_device_group.devices,
                     raid_volume.raid_level,
                 ),
             ),

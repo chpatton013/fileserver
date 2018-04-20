@@ -1,17 +1,16 @@
+"""
+Tune performance parameters for disk devices, raid volumes, and filesystem
+volumes.
+"""
+
+
 import argparse
 import datetime
-import os
 
 import actions.action
 import configuration
 import executor
 import parameters
-
-
-"""
-Tune performance parameters for disk devices, raid volumes, and filesystem
-volumes.
-"""
 
 
 def parse_args(argv):
@@ -42,6 +41,17 @@ class Tune(actions.action.Action):
             verbose=self.args.verbose,
         )
         self.configuration = configuration.make(self.args.config_file)
+
+    def do(self):
+        # TODO: assert everything is started before proceeding
+
+        rc_commands = []
+        rc_commands += self._tune_disk()
+        rc_commands += self._tune_raid()
+
+        self._tune_fs()
+
+        self._tune_persist(rc_commands)
 
     def _tune_disk_device(self, device, max_sectors_kb, ncq_depth):
         rc_commands = []
@@ -201,14 +211,3 @@ class Tune(actions.action.Action):
 
         rc_file_contents = "\n".join(rc_commands + ["exit 0"])
         self.executor.write(rc_file, rc_file_contents)
-
-    def do(self):
-        # TODO: assert everything is started before proceeding
-
-        rc_commands = []
-        rc_commands += self._tune_disk()
-        rc_commands += self._tune_raid()
-
-        self._tune_fs()
-
-        self._tune_persist(rc_commands)

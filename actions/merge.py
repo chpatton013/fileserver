@@ -1,18 +1,19 @@
+"""
+Merge multiple configs into a single output config.
+
+This is useful when incorporating new disks or volumes into an existing system.
+"""
+
+
 import argparse
 import collections
+from functools import reduce
 
 import yaml
 
 import actions.action
 import configuration
 import utility
-
-
-"""
-Merge multiple configs into a single output config.
-
-This is useful when incorporating new disks or volumes into an existing system.
-"""
 
 
 def parse_args(argv):
@@ -35,7 +36,9 @@ class Merge(actions.action.Action):
         self.configuration = configuration.make_many_raw(self.args.input_files)
 
     def do(self):
-        config = collections.OrderedDict()
-        for c in self.configuration:
-            config = utility.merge(config, c)
+        config = reduce(
+            utility.merge,
+            self.configuration,
+            collections.OrderedDict(),
+        )
         open(self.args.output_file, "w").write(yaml.dump(config))

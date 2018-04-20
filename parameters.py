@@ -1,6 +1,8 @@
 from functools import reduce
 import subprocess
 
+import utility
+
 
 BYTES_PER_SECTOR = 512
 BYTES_PER_PAGE = 4096
@@ -28,25 +30,9 @@ def _num_data_disks(disk_devices, raid_level):
         raise InvalidRaidLevel(raid_level)
 
 
-def _gcd(a, b):
-    """
-    Find the greatest common denominator between two integers.
-    """
-    while b:
-        a, b = b, a % b
-    return a
-
-
-def _lcm(a, b):
-    """
-    Find the least common multiple between two integers.
-    """
-    return a * b // _gcd(a, b)
-
-
 def disk_ncq_depth(devices):
     """
-    Calculate the lowest common NCQ depth value for all devices.
+    Calculate the least common NCQ depth value for all devices.
     """
     depths = []
     for device in devices:
@@ -98,7 +84,7 @@ def fs_block_size_kb(disk_devices):
         int(subprocess.check_output(["blockdev", "--getbsz", d.path]).strip())
         for d in disk_devices
     ]
-    return int(reduce(_lcm, block_sizes) / 1024)
+    return int(reduce(utility.least_common_multiple, block_sizes) / 1024)
 
 
 def fs_stride(disk_devices, raid_level):

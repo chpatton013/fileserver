@@ -70,6 +70,9 @@ export:
         - 192.168.0.0/16
         - 172.16.0.0/12
         - 10.0.0.0/8
+    - name: wild
+      hosts:
+        - "*"
   options:
     - name: read_only
       value: ro,async,crossmnt,no_subtree_check,fsid=0,all_squash
@@ -78,7 +81,7 @@ export:
   volumes:
     - path: /exports/library_ro
       host_group_options:
-        - host_group: internal_network
+        - host_group: wild
           option: read_only
     - path: /exports/library_rw
       host_group_options:

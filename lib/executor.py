@@ -1,6 +1,6 @@
 import subprocess
 
-import log
+import lib.log
 
 
 class DryrunPopen():
@@ -19,7 +19,7 @@ class Executor(object):
     def __init__(self, dryrun=False, verbose=False):
         self.dryrun = dryrun
         self.verbose = verbose
-        self.log = log.Logger(dryrun=dryrun)
+        self.log = lib.log.Logger(dryrun=dryrun)
 
     def debug(self, *args, **kwargs):
         if self.verbose:

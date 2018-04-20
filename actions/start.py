@@ -6,8 +6,8 @@ Start existing RAID, crypt, filesystem, bind, and export volumes.
 import argparse
 
 import actions.action
-import configuration
-import executor
+import lib.configuration
+import lib.executor
 
 
 def parse_args(argv):

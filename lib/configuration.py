@@ -2,8 +2,8 @@ import collections
 
 import yaml
 
-import schema
-import utility
+import lib.schema
+import lib.utility
 
 
 def _represent_ordereddict(dumper, data):
@@ -59,7 +59,7 @@ class Disk:
             self.raid_volume = schema["raid_volume"]
             self.fs_volume = schema["fs_volume"]
             self.devices = [
-                self.Device(**utility.merge(schema["defaults"], d))
+                self.Device(**lib.utility.merge(schema["defaults"], d))
                 for d in schema["devices"]
             ]
 
@@ -134,7 +134,7 @@ class Crypt:
 
     def __init__(self, schema):
         self.volumes = [
-            self.Volume(**utility.merge(schema["defaults"], v))
+            self.Volume(**lib.utility.merge(schema["defaults"], v))
             for v in schema["volumes"]
         ]
 
@@ -268,7 +268,7 @@ class Configuration:
 
 
 def make_raw(config_file):
-    return schema.ConfigurationSchema().load(
+    return lib.schema.ConfigurationSchema().load(
         yaml.load(open(config_file, "r").read()),
     )
 

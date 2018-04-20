@@ -12,8 +12,8 @@ from functools import reduce
 import yaml
 
 import actions.action
-import configuration
-import utility
+import lib.configuration
+import lib.utility
 
 
 def parse_args(argv):

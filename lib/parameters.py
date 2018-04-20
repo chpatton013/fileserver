@@ -1,7 +1,7 @@
 from functools import reduce
 import subprocess
 
-import utility
+import lib.utility
 
 
 BYTES_PER_SECTOR = 512
@@ -84,7 +84,7 @@ def fs_block_size_kb(disk_devices):
         int(subprocess.check_output(["blockdev", "--getbsz", d.path]).strip())
         for d in disk_devices
     ]
-    return int(reduce(utility.least_common_multiple, block_sizes) / 1024)
+    return int(reduce(lib.utility.least_common_multiple, block_sizes) / 1024)
 
 
 def fs_stride(disk_devices, raid_level):

@@ -8,9 +8,9 @@ import argparse
 import datetime
 
 import actions.action
-import configuration
-import executor
-import parameters
+import lib.configuration
+import lib.executor
+import lib.parameters
 
 
 def parse_args(argv):

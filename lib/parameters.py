@@ -13,24 +13,24 @@ class InvalidRaidLevel(ValueError):
     pass
 
 
-def _num_data_disks(disk_devices, raid_level):
+def _num_data_devices(media_devices, raid_level):
     """
-    Determine how many of the provided disk devices contribute to total data
+    Determine how many of the provided media devices contribute to total data
     capacity according to the provided raid level.
     """
     if raid_level == 0:
-        return len(disk_devices)
+        return len(media_devices)
     elif raid_level == 1:
         return 1
     elif raid_level == 5:
-        return len(disk_devices) - 1
+        return len(media_devices) - 1
     elif raid_level == 6:
-        return len(disk_devices) - 2
+        return len(media_devices) - 2
     else:
         raise InvalidRaidLevel(raid_level)
 
 
-def disk_ncq_depth(devices):
+def device_ncq_depth(devices):
     """
     Calculate the least common NCQ depth value for all devices.
     """
@@ -60,45 +60,49 @@ def raid_chunk_size_kb(raid_level):
         raise InvalidRaidLevel(raid_level)
 
 
-def raid_readahead_sectors(disk_devices):
+def raid_readahead_sectors(media_devices):
     """
     This formula was found in a RAID tuning forum post:
     https://ubuntuforums.org/showthread.php?t=1494846
     """
-    return int(sum(d.readahead_sectors for d in disk_devices))
+    return int(sum(d.readahead_sectors for d in media_devices))
 
 
-def raid_stripe_cache_pages(disk_devices):
+def raid_stripe_cache_pages(media_devices):
     """
     This formula was found in a RAID tuning forum post:
     https://ubuntuforums.org/showthread.php?t=1494846
     """
-    sum_disk_readahead_sectors = sum(d.readahead_sectors for d in disk_devices)
-    average_disk_readahead_sectors = \
-        sum_disk_readahead_sectors / len(disk_devices)
-    return int(average_disk_readahead_sectors / SECTORS_PER_PAGE)
+    sum_media_readahead_sectors = sum(
+        d.readahead_sectors for d in media_devices
+    )
+    average_media_readahead_sectors = \
+        sum_media_readahead_sectors / len(media_devices)
+    return int(average_media_readahead_sectors / SECTORS_PER_PAGE)
 
 
-def fs_block_size_kb(disk_devices):
+def fs_block_size_kb(media_devices):
     block_sizes = [
         int(subprocess.check_output(["blockdev", "--getbsz", d.path]).strip())
-        for d in disk_devices
+        for d in media_devices
     ]
     return int(reduce(lib.utility.least_common_multiple, block_sizes) / 1024)
 
 
-def fs_stride(disk_devices, raid_level):
+def fs_stride(media_devices, raid_level):
     """
     This formula was found in a RAID tuning forum post:
     https://ubuntuforums.org/showthread.php?p=11642898
     """
-    return int(raid_chunk_size_kb(raid_level) / fs_block_size_kb(disk_devices))
+    return int(
+        raid_chunk_size_kb(raid_level) / fs_block_size_kb(media_devices)
+    )
 
 
-def fs_stripe_width(disk_devices, raid_level):
+def fs_stripe_width(media_devices, raid_level):
     """
     This formula was found in a RAID tuning forum post:
     https://ubuntuforums.org/showthread.php?p=11642898
     """
-    num_data_disks = _num_data_disks(disk_devices, raid_level)
-    return int(fs_stride(disk_devices, raid_level) * num_data_disks)
+    num_data_devices = _num_data_devices(media_devices, raid_level)
+    return int(fs_stride(media_devices, raid_level) * num_data_devices)

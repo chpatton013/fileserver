@@ -1,8 +1,5 @@
 # TODO
 
-* Rename disk to media.
-  * A disk is just an implementation of storage media.
-
 * Add sync schema.
   * List of source-to-target tuples to feed to lsyncd.
   * Multi-lsyncd tool:

@@ -1,4 +1,4 @@
-disk:
+media:
   device_groups:
     - defaults:
         randomize_source: /dev/urandom

@@ -33,7 +33,7 @@ class UnknownFsVolume(KeyError):
     pass
 
 
-class Disk:
+class Media:
     class DeviceGroup:
         class Device:
             def __init__(self, **kwargs):
@@ -213,7 +213,7 @@ class Export:
 
 class Configuration:
     def __init__(self, schema):
-        self.disk = Disk(schema["disk"])
+        self.media = Media(schema["media"])
         self.raid = Raid(schema["raid"])
         self.crypt = Crypt(schema["crypt"])
         self.fs = Fs(schema["fs"])
@@ -238,30 +238,30 @@ class Configuration:
                 return v
         raise UnknownFsVolume(fs_volume_name)
 
-    def find_disk_device_group_with_raid_volume(self, raid_volume_name):
-        for dg in self.disk.device_groups:
+    def find_media_device_group_with_raid_volume(self, raid_volume_name):
+        for dg in self.media.device_groups:
             if dg.raid_volume == raid_volume_name:
                 return dg
         raise UnknownRaidVolume(raid_volume_name)
 
-    def find_disk_device_group_with_fs_volume(self, fs_volume_name):
-        for dg in self.disk.device_groups:
+    def find_media_device_group_with_fs_volume(self, fs_volume_name):
+        for dg in self.media.device_groups:
             if dg.fs_volume == fs_volume_name:
                 return dg
         raise UnknownFsVolume(fs_volume_name)
 
-    def find_disk_devices_with_raid_volume(self, raid_volume_name):
+    def find_media_devices_with_raid_volume(self, raid_volume_name):
         device_groups = [
             dg
-            for dg in self.disk.device_groups
+            for dg in self.media.device_groups
             if dg.raid_volume == raid_volume_name
         ]
         return sum((dg.devices for dg in device_groups), [])
 
-    def find_disk_devices_with_fs_volume(self, fs_volume_name):
+    def find_media_devices_with_fs_volume(self, fs_volume_name):
         device_groups = [
             dg
-            for dg in self.disk.device_groups
+            for dg in self.media.device_groups
             if dg.fs_volume == fs_volume_name
         ]
         return sum((dg.devices for dg in device_groups), [])

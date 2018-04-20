@@ -1,10 +1,10 @@
 from marshmallow import Schema, fields, validate
 
 
-class DiskSchema(Schema):
+class MediaSchema(Schema):
     class DeviceGroupSchema(Schema):
         class DeviceCommon(object):
-            # Device used to iniitialize disk devices with random data.
+            # Device used to iniitialize media devices with random data.
             randomize_source = fields.Str(
                 allow_none=True,
                 validate=validate.OneOf([
@@ -26,10 +26,10 @@ class DiskSchema(Schema):
 
         class DeviceSchema(Schema, DeviceCommon):
             # Path to block device.
-            # This is usually a disk: /dev/sdX
+            # This is usually a storage drive: /dev/sdX
             path = fields.Str(required=True)
 
-        # Defaults for all disk devices in this group.
+        # Defaults for all media devices in this group.
         # These values will be overridden by values defined in a device.
         defaults = fields.Nested(DeviceDefaultsSchema)
 
@@ -41,10 +41,10 @@ class DiskSchema(Schema):
         # This is optional.
         fs_volume = fields.Str()
 
-        # List of disk devices that compose this group.
+        # List of media devices that compose this group.
         devices = fields.Nested(DeviceSchema, many=True, required=True)
 
-    # List of disk device groups to manage on the system.
+    # List of media device groups to manage on the system.
     device_groups = fields.Nested(DeviceGroupSchema, many=True, required=True)
 
 
@@ -52,7 +52,7 @@ class RaidSchema(Schema):
     class VolumeSchema(Schema):
         class DeviceSchema(Schema):
             # Path to block device.
-            # This is usually the only partition on a disk: /dev/sdX1
+            # This is usually the only partition on a storage drive: /dev/sdX1
             path = fields.Str(required=True)
 
         # Name for RAID volume.
@@ -72,7 +72,7 @@ class RaidSchema(Schema):
             validate=validate.OneOf([
                 # Block-level striping.
                 0,
-                # Full-disk mirroring.
+                # Full-device mirroring.
                 1,
                 # Parity distribution with 1 parity stripe.
                 5,
@@ -140,7 +140,7 @@ class CryptSchema(Schema):
 class FsSchema(Schema):
     class VolumeSchema(Schema):
         # Name of FS volume.
-        # This is referenced by disk devices.
+        # This is referenced by media devices.
         name = fields.Str(required=True)
 
         # Type of filesystem to use on volume.
@@ -225,7 +225,7 @@ class ConfigurationSchema(Schema):
         ordered = True
         strict = True
 
-    disk = fields.Nested(DiskSchema)
+    media = fields.Nested(MediaSchema)
     raid = fields.Nested(RaidSchema)
     crypt = fields.Nested(CryptSchema)
     fs = fields.Nested(FsSchema)

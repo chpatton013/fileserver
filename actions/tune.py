@@ -1,5 +1,5 @@
 """
-Tune performance parameters for disk devices, raid volumes, and filesystem
+Tune performance parameters for media devices, raid volumes, and filesystem
 volumes.
 """
 
@@ -46,18 +46,18 @@ class Tune(actions.action.Action):
         # TODO: assert everything is started before proceeding
 
         rc_commands = []
-        rc_commands += self._tune_disk()
+        rc_commands += self._tune_media()
         rc_commands += self._tune_raid()
 
         self._tune_fs()
 
         self._tune_persist(rc_commands)
 
-    def _tune_disk_device(self, device, max_sectors_kb, ncq_depth):
+    def _tune_media_device(self, device, max_sectors_kb, ncq_depth):
         rc_commands = []
 
         rc_commands.append(self.executor.info(
-            "Tuning disk device '{}'".format(device.path),
+            "Tuning media device '{}'".format(device.path),
         ))
 
         rc_commands.append(self.executor.run([
@@ -84,12 +84,12 @@ class Tune(actions.action.Action):
 
         return rc_commands
 
-    def _tune_disk(self):
+    def _tune_media(self):
         rc_commands = []
 
-        rc_commands.append(self.executor.info("Tuning disk parameters"))
+        rc_commands.append(self.executor.info("Tuning media parameters"))
 
-        for device_group in self.configuration.disk.device_groups:
+        for device_group in self.configuration.media.device_groups:
             raid_volume = self.configuration.find_raid_volume(
                 device_group.raid_volume,
             )
@@ -97,14 +97,14 @@ class Tune(actions.action.Action):
                 raid_volume.raid_level,
             )
 
-            disk_devices = \
-                self.configuration.find_disk_devices_with_raid_volume(
+            media_devices = \
+                self.configuration.find_media_devices_with_raid_volume(
                     device_group.raid_volume,
                 )
-            ncq_depth = parameters.disk_ncq_depth(disk_devices)
+            ncq_depth = parameters.device_ncq_depth(media_devices)
 
             for device in device_group.devices:
-                rc_commands += self._tune_disk_device(
+                rc_commands += self._tune_media_device(
                     device,
                     max_sectors_kb,
                     ncq_depth,
@@ -119,11 +119,13 @@ class Tune(actions.action.Action):
             "Tuning RAID volume '{}' ('{}')".format(volume.name, volume.label),
         ))
 
-        disk_devices = self.configuration.find_disk_devices_with_raid_volume(
+        media_devices = self.configuration.find_media_devices_with_raid_volume(
             volume.name,
         )
 
-        raid_readahead_sectors = parameters.raid_readahead_sectors(disk_devices)
+        raid_readahead_sectors = parameters.raid_readahead_sectors(
+            media_devices,
+        )
         rc_commands.append(self.executor.run([
             "blockdev",
             "--setra",
@@ -132,7 +134,7 @@ class Tune(actions.action.Action):
         ]))
 
         raid_stripe_cache_pages = parameters.raid_stripe_cache_pages(
-            disk_devices,
+            media_devices,
         )
         rc_commands.append(self.executor.write(
             volume.stripe_cache_size_file,
@@ -169,12 +171,12 @@ class Tune(actions.action.Action):
             volume.mount_location,
         )
 
-        disk_device_group = \
-            self.configuration.find_disk_device_group_with_fs_volume(
+        media_device_group = \
+            self.configuration.find_media_device_group_with_fs_volume(
                 volume.name,
             )
         raid_volume = self.configuration.find_raid_volume(
-            disk_device_group.raid_volume,
+            media_device_group.raid_volume,
         )
 
         self.executor.run([
@@ -182,11 +184,11 @@ class Tune(actions.action.Action):
             "-E",
             "stride={},stripe-width={}".format(
                 parameters.fs_stride(
-                    disk_device_group.devices,
+                    media_device_group.devices,
                     raid_volume.raid_level,
                 ),
                 parameters.fs_stripe_width(
-                    disk_device_group.devices,
+                    media_device_group.devices,
                     raid_volume.raid_level,
                 ),
             ),

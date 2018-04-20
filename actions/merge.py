@@ -1,7 +1,8 @@
 """
 Merge multiple configs into a single output config.
 
-This is useful when incorporating new disks or volumes into an existing system.
+This is useful when incorporating new devices or volumes into an existing
+system.
 """
 
 

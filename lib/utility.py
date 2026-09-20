@@ -27,18 +27,9 @@ def _merge_dict_items(lhs, rhs, result):
     return result
 
 
-def merge(lhs, rhs):
+def _merge_internal(lhs, rhs):
     """
     Recursively merge two arguments of identical type.
-
-    This has similar semantics to dict.update, but does not modify lhs and
-    applies to all types.
-
-    If lhs and rhs are not the same type, InconsistentTypeError is raised.
-    If lhs and rhs are dict's or collections.OrderedDict's, they are recursively
-    merged.
-    If lhs and rhs are list's, lhs and rhs are appended.
-    If lhs and rhs are any other type, lhs is replaced by rhs.
     """
     if type(lhs) != type(rhs):
         raise InconsistentTypeError()
@@ -55,13 +46,20 @@ def merge(lhs, rhs):
         return rhs
 
 
-def merge_r(lhs, *rhs):
+def merge(lhs, *rhs):
     """
     Recursively merge any number of arguments of identical type.
 
-    See merge() for information about merging semantics.
+    This has similar semantics to dict.update, but does not modify lhs and
+    applies to all types.
+
+    If lhs and rhs are not the same type, InconsistentTypeError is raised.
+    If lhs and rhs are dict's or collections.OrderedDict's, they are recursively
+    merged.
+    If lhs and rhs are list's, lhs and rhs are appended.
+    If lhs and rhs are any other type, lhs is replaced by rhs.
     """
-    return reduce(merge, rhs, initializer=lhs)
+    return reduce(_merge_internal, rhs, lhs)
 
 
 def greatest_common_denominator(a, b):

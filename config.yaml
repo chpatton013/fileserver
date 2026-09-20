@@ -1,10 +1,10 @@
 media:
+  device_defaults:
+    randomize_source: /dev/urandom
+    readahead_sectors: 256
+    nr_requests: 128
   device_groups:
-    - defaults:
-        randomize_source: /dev/urandom
-        readahead_sectors: 256
-        nr_requests: 128
-      raid_volume: array
+    - raid_volume: array
       fs_volume: storage
       devices:
         - path: /dev/sda
@@ -18,8 +18,8 @@ media:
 
 raid:
   mdadm_config:
-    device: partitions
-    create: owner=root group=disk mode=0660 auto=yes
+    device: partitions containers
+    create: owner=root group=disk mode=0660 auto=yes names=yes
     homehost: <system>
     mailaddr: root
   speed_limit_min: 1000
